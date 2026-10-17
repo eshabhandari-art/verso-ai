@@ -16,29 +16,36 @@ from database import get_db
 log = logging.getLogger(__name__)
 
 SEED_DIR = Path(os.getenv("SEED_REELS_DIR", Path(__file__).parent / "seed_reels"))
+DEMO_DIR = Path(os.getenv("DEMO_REELS_DIR", Path(__file__).parent / "demo_reels"))
+DEMO_FILENAME = "Mira and the Lighthouse.docx"
 
 
 def seed_gold_reels() -> int:
     """Insert seed reels if the bundle exists and none are loaded yet. Returns count inserted."""
-    manifest_path = SEED_DIR / "manifest.json"
+    return _seed_bundle(SEED_DIR, "__gold_standard__") + _seed_bundle(DEMO_DIR, DEMO_FILENAME)
+
+
+def _seed_bundle(bundle_dir: Path, filename: str) -> int:
+    manifest_path = bundle_dir / "manifest.json"
     if not manifest_path.exists():
         return 0
 
     conn = get_db()
     try:
-        if conn.execute("SELECT 1 FROM uploads WHERE filename = '__gold_standard__'").fetchone():
+        if conn.execute("SELECT 1 FROM uploads WHERE filename = ? AND doc_type = 'seed'", (filename,)).fetchone():
             return 0
 
         reels = json.loads(manifest_path.read_text(encoding="utf-8"))
         cur = conn.execute(
             "INSERT INTO uploads (user_id, filename, status, doc_type, subject_category) "
-            "VALUES (1, '__gold_standard__', 'done', 'seed', 'general')"
+            "VALUES (1, ?, 'done', 'seed', 'general')",
+            (filename,),
         )
         upload_id = cur.lastrowid
 
         inserted = 0
         for reel in reels:
-            video_path = SEED_DIR / "videos" / reel["video"]
+            video_path = bundle_dir / "videos" / reel["video"]
             if not video_path.exists():
                 continue
             conn.execute(
@@ -59,7 +66,7 @@ def seed_gold_reels() -> int:
             )
             inserted += 1
         conn.commit()
-        log.info("Seeded %d gold-standard reels from %s", inserted, SEED_DIR)
+        log.info("Seeded %d reels from %s", inserted, bundle_dir)
         return inserted
     finally:
         conn.close()

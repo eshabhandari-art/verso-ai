@@ -32,7 +32,7 @@ BATCH_SIZE = 3
 PIPELINE_TIMEOUT = _PIPELINE_TIMEOUT  # from config, default 20 min
 
 # Thread pool for overlapping TTS+ffmpeg with LLM calls
-_video_executor = ThreadPoolExecutor(max_workers=2)
+_video_executor = ThreadPoolExecutor(max_workers=int(os.getenv("VIDEO_WORKERS", "2")))
 
 # Set by main.py lifespan — the running asyncio event loop
 _event_loop: asyncio.AbstractEventLoop | None = None

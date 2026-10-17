@@ -11,3 +11,4 @@ backend/seed_reels
 backend/.env
 backend/tts/models
 docs
+backend/demo_reels

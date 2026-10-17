@@ -50,3 +50,4 @@ scripts/verso-qwen2.5-3b_gguf/
 scripts/training_data_raw.jsonl
 backend/eval_results.json
 backend/seed_reels/
+backend/demo_reels/
