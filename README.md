@@ -2,8 +2,6 @@
 
 **Learn Smarter, Scroll Better**
 
-> Originally built by the Verso AI team: [Verso-AI-Blaziken/verso-ai](https://github.com/Verso-AI-Blaziken/verso-ai). This repository is a copy imported from that project.
-
 ## Tech Stack
 
 | Layer | Technology |
