@@ -18,7 +18,8 @@ export default function OnboardingPage() {
   const completeOnboarding = useStore((s) => s.completeOnboarding)
 
   const [step, setStep] = useState(1)
-  const [name, setName] = useState(user?.name || '')
+  // Guest accounts have generated names (guest_xxxx) — don't prefill those
+  const [name, setName] = useState(user?.name?.startsWith('guest_') ? '' : (user?.name || ''))
   const [selectedRole, setSelectedRole] = useState(null)
 
   // Security questions state
@@ -44,8 +45,9 @@ export default function OnboardingPage() {
 
   const handleRoleSelect = (roleId) => {
     setSelectedRole(roleId)
-    // Store role temporarily, move to security questions
-    setStep(3)
+    // Guest sessions have no password to recover, so skip security questions
+    completeOnboarding(name.trim(), roleId)
+    navigate('/')
   }
 
   const handleFinish = async () => {
@@ -89,7 +91,6 @@ export default function OnboardingPage() {
         <div className="ob-progress">
           <div className={`ob-dot${step >= 1 ? ' active' : ''}`} />
           <div className={`ob-dot${step >= 2 ? ' active' : ''}`} />
-          <div className={`ob-dot${step >= 3 ? ' active' : ''}`} />
         </div>
 
         {step === 1 && (
