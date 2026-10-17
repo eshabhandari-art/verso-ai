@@ -453,7 +453,7 @@ def _burn_word_sync(video_path: str, narration: str, duration: float,
     time_per_word = usable / total_words
 
     # Generate PNGs and build overlay filter chain
-    inputs = ["-i", video_path]
+    inputs = ["-threads", FFMPEG_THREADS, "-i", video_path]
     filter_parts = []
     current_label = "0:v"
     word_offset = 0
@@ -617,7 +617,7 @@ def compose_reel_video(
         _generate_background_music(bg_music_path, bg_freq, bg_type, duration=duration + 1)
 
         # Build ffmpeg command
-        inputs = ["-stream_loop", "-1", "-i", stock_video_path]
+        inputs = ["-threads", FFMPEG_THREADS, "-stream_loop", "-1", "-i", stock_video_path]
         filter_parts = []
 
         # Scale video to 1080x1920 with lanczos for sharp upscaling
@@ -792,7 +792,7 @@ def compose_multi_clip_reel(
                 clip_path = clip_map.get(seg.get("clip", ""))
                 if not clip_path or not os.path.exists(clip_path):
                     raise FileNotFoundError(f"Clip not found: {seg.get('clip', '')}")
-                inputs.extend(["-r", str(FPS), "-stream_loop", "-1", "-t", f"{dur:.2f}", "-i", clip_path])
+                inputs.extend(["-threads", FFMPEG_THREADS, "-r", str(FPS), "-stream_loop", "-1", "-t", f"{dur:.2f}", "-i", clip_path])
                 filter_parts.append(
                     f"[{i}:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase"
                     f":flags=lanczos,crop={WIDTH}:{HEIGHT},setsar=1[v{i}]"
