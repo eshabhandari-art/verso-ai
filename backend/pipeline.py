@@ -22,7 +22,7 @@ from bg_images import assign_images, _resolve_category
 from rag import embed_chunks
 from video import compose_reel_video, compose_multi_clip_reel, get_clips_for_category
 from tts.engine import generate_audio
-from config import STOCK_VIDEOS_DIR, PIPELINE_TIMEOUT as _PIPELINE_TIMEOUT
+from config import STOCK_VIDEOS_DIR, PIPELINE_TIMEOUT as _PIPELINE_TIMEOUT, LLM_PROVIDER, GEMINI_API_KEY
 from ws_manager import manager
 
 log = logging.getLogger(__name__)
@@ -387,9 +387,13 @@ def _run_pipeline(upload_id: int, filepath: str, user_id: int = 1):
         # Step 1.5: Quick Ollama health check — fail fast if LLM is unreachable
         _update_progress(upload_id, 10, "checking")
         try:
-            httpx.get(f"{os.getenv('OLLAMA_HOST', 'http://localhost:11434')}/api/tags", timeout=10)
+            if LLM_PROVIDER == "gemini":
+                if not GEMINI_API_KEY:
+                    raise RuntimeError("GEMINI_API_KEY is not set")
+            else:
+                httpx.get(f"{os.getenv('OLLAMA_HOST', 'http://localhost:11434')}/api/tags", timeout=10)
         except Exception:
-            log.error("Ollama is unreachable for upload %s", upload_id)
+            log.error("LLM service is unreachable for upload %s", upload_id)
             _update_status(upload_id, "error", "AI service is unavailable. Please try again later.")
             return
 

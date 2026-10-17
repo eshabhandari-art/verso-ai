@@ -36,7 +36,7 @@ AUDIO_PROFILES = {
 DEFAULT_PROFILE = (261, "sine")
 
 # ffmpeg resource limits for 8GB environments
-FFMPEG_THREADS = "4"          # limit encoder threads (default would use all cores)
+FFMPEG_THREADS = os.getenv("FFMPEG_THREADS", "4")  # limit encoder threads (default would use all cores)
 FFMPEG_ENCODE_TIMEOUT = 180   # seconds
 
 # Module-level video catalog cache

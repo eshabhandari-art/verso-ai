@@ -1,3 +1,4 @@
+import asyncio
 import re
 import httpx
 import numpy as np
@@ -7,7 +8,9 @@ from config import (
     CHUNK_MAX_CHARS,
     CHUNK_OVERLAP_CHARS,
     OLLAMA_EMBED_TIMEOUT,
+    LLM_PROVIDER,
 )
+import gemini
 from rag.store import save_embeddings
 
 
@@ -54,6 +57,8 @@ def chunk_text(full_text: str) -> list[str]:
 
 
 async def embed_text(text: str) -> list[float]:
+    if LLM_PROVIDER == "gemini":
+        return (await asyncio.to_thread(gemini.embed, [text]))[0]
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{OLLAMA_HOST}/api/embed",
@@ -70,12 +75,18 @@ async def embed_chunks(upload_id: int, full_text: str, on_progress=None) -> int:
     if not chunks:
         return 0
 
-    vectors = []
-    for i, chunk in enumerate(chunks):
-        vec = await embed_text(chunk)
-        vectors.append(vec)
+    if LLM_PROVIDER == "gemini":
+        # Batched — one request per 100 chunks instead of one per chunk
+        vectors = await asyncio.to_thread(gemini.embed, chunks)
         if on_progress:
-            on_progress((i + 1) / len(chunks))
+            on_progress(1.0)
+    else:
+        vectors = []
+        for i, chunk in enumerate(chunks):
+            vec = await embed_text(chunk)
+            vectors.append(vec)
+            if on_progress:
+                on_progress((i + 1) / len(chunks))
 
     vectors_np = np.array(vectors, dtype=np.float32)
     save_embeddings(upload_id, chunks, vectors_np)

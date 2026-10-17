@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import httpx
@@ -7,7 +8,8 @@ from database import get_db
 from auth import get_current_user
 from ws_auth import ws_authenticate
 from rag import retrieve_chunks
-from config import OLLAMA_HOST, CHAT_MODEL, LLM_TIMEOUT, MAX_EXCHANGES_PER_DOC
+from config import OLLAMA_HOST, CHAT_MODEL, LLM_TIMEOUT, MAX_EXCHANGES_PER_DOC, LLM_PROVIDER
+import gemini
 
 log = logging.getLogger(__name__)
 
@@ -270,6 +272,9 @@ ANSWER:"""
 
 
 async def _generate(prompt: str) -> str:
+    if LLM_PROVIDER == "gemini":
+        text = await asyncio.to_thread(gemini.generate, prompt, timeout=LLM_TIMEOUT)
+        return text.strip()
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{OLLAMA_HOST}/api/generate",
@@ -287,6 +292,10 @@ async def _generate(prompt: str) -> str:
 
 async def _generate_stream(prompt: str):
     """Async generator that yields tokens from Ollama streaming API."""
+    if LLM_PROVIDER == "gemini":
+        # Free-tier Gemini: one non-streaming call, yielded as a single chunk
+        yield await asyncio.to_thread(gemini.generate, prompt, timeout=LLM_TIMEOUT)
+        return
     async with httpx.AsyncClient() as client:
         async with client.stream(
             "POST",

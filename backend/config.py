@@ -6,16 +6,23 @@ from pathlib import Path
 _ENV_FILE = Path(os.path.dirname(__file__)) / ".env"
 
 
-def _get_or_create_jwt_secret() -> str:
-    """Return JWT secret from env, .env file, or generate one."""
-    val = os.getenv("JWT_SECRET")
+def _get_env(name: str, default: str = "") -> str:
+    """Return a setting from the environment, falling back to the .env file."""
+    val = os.getenv(name)
     if val:
         return val
-    # Try reading from .env file
     if _ENV_FILE.exists():
         for line in _ENV_FILE.read_text().splitlines():
-            if line.startswith("JWT_SECRET="):
+            if line.startswith(f"{name}="):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return default
+
+
+def _get_or_create_jwt_secret() -> str:
+    """Return JWT secret from env, .env file, or generate one."""
+    val = _get_env("JWT_SECRET")
+    if val:
+        return val
     # Generate and persist
     generated = secrets.token_hex(32)
     with open(_ENV_FILE, "a") as f:
@@ -29,6 +36,13 @@ JWT_SECRET: str = _get_or_create_jwt_secret()
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 EMBED_MODEL: str = "nomic-embed-text"
 EMBED_DIM: int = 768
+
+# LLM provider — "ollama" (local models) or "gemini" (Google Gemini API)
+LLM_PROVIDER: str = _get_env("LLM_PROVIDER", "ollama").lower()
+GEMINI_API_KEY: str = _get_env("GEMINI_API_KEY")
+GEMINI_MODEL: str = _get_env("GEMINI_MODEL", "gemini-flash-lite-latest")
+GEMINI_EMBED_MODEL: str = _get_env("GEMINI_EMBED_MODEL", "gemini-embedding-001")
+GEMINI_MIN_INTERVAL: float = float(_get_env("GEMINI_MIN_INTERVAL", "4"))  # seconds between requests
 
 # Chunking
 CHUNK_MAX_CHARS: int = 500

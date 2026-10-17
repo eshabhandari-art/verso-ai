@@ -5,7 +5,8 @@ import logging
 import re
 import time
 import httpx
-from config import OLLAMA_HOST, LLM_MODEL, CLASSIFICATION_MODEL, REEL_MODEL, LLM_TIMEOUT, REEL_LLM_TIMEOUT, CLASSIFICATION_TIMEOUT
+from config import OLLAMA_HOST, LLM_MODEL, CLASSIFICATION_MODEL, REEL_MODEL, LLM_TIMEOUT, REEL_LLM_TIMEOUT, CLASSIFICATION_TIMEOUT, LLM_PROVIDER
+import gemini
 from database import get_db
 from prompts import (
     DOC_TYPE_PROMPT,
@@ -36,6 +37,14 @@ class OllamaUnavailableError(Exception):
     """Raised when Ollama cannot be reached after retries."""
 
 
+def _gemini_call(prompt: str, **kwargs) -> str:
+    """Route an LLM call to Gemini, mapping connection failures like Ollama's."""
+    try:
+        return gemini.generate(prompt, **kwargs)
+    except httpx.ConnectError as e:
+        raise OllamaUnavailableError(f"Cannot reach Gemini: {e}") from e
+
+
 def llm_call(prompt: str, json_mode: bool = False, timeout: float = None) -> str:
     """Single LLM call to Ollama with retry. Returns response text.
 
@@ -44,6 +53,9 @@ def llm_call(prompt: str, json_mode: bool = False, timeout: float = None) -> str
     """
     if timeout is None:
         timeout = LLM_TIMEOUT
+
+    if LLM_PROVIDER == "gemini":
+        return _gemini_call(prompt, json_mode=json_mode, temperature=0.3, max_tokens=400, timeout=timeout)
 
     payload = {
         "model": LLM_MODEL,
@@ -100,6 +112,9 @@ def clean_classification_response(text: str) -> str:
 
 def classification_llm_call(prompt: str, timeout: float = CLASSIFICATION_TIMEOUT) -> str:
     """LLM call using the lightweight classification model (thinking disabled)."""
+    if LLM_PROVIDER == "gemini":
+        return _gemini_call(prompt, temperature=0.1, max_tokens=20, timeout=timeout)
+
     payload = {
         "model": CLASSIFICATION_MODEL,
         "prompt": prompt,
@@ -147,6 +162,10 @@ def reel_llm_call(prompt: str, timeout: float = REEL_LLM_TIMEOUT, system: str = 
                    num_predict: int = 600, json_mode: bool = True,
                    num_ctx: int = 4096) -> str:
     """LLM call using the reel model. JSON mode on by default."""
+    if LLM_PROVIDER == "gemini":
+        return _gemini_call(prompt, system=system, json_mode=json_mode, temperature=0.3,
+                            max_tokens=num_predict, timeout=timeout)
+
     payload = {
         "model": REEL_MODEL,
         "prompt": prompt,

@@ -1,0 +1,10 @@
+.git
+**/node_modules
+**/venv
+**/__pycache__
+frontend/dist
+backend/data
+backend/.env
+backend/tts/models
+docs
+deploy
