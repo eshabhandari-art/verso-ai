@@ -37,6 +37,9 @@ DEFAULT_PROFILE = (261, "sine")
 
 # ffmpeg resource limits for 8GB environments
 FFMPEG_THREADS = os.getenv("FFMPEG_THREADS", "4")  # limit encoder threads (default would use all cores)
+# Render clips one at a time and join them with fades instead of xfade, which buffers
+# whole clips in memory (needed on 512 MB hosts such as Render free tier)
+LOW_MEMORY_VIDEO = os.getenv("LOW_MEMORY_VIDEO", "0") == "1"
 FFMPEG_ENCODE_TIMEOUT = 180   # seconds
 
 # Module-level video catalog cache
@@ -709,6 +712,47 @@ def compose_reel_video(
     return out_path
 
 
+def _render_segments_sequentially(seg_inputs: list[list[str]], seg_filters: list[str],
+                                  durations: list[float], transition: float, fps: int,
+                                  tmpdir: str) -> str:
+    """Encode each segment separately (with short fades), then concat without re-encoding.
+
+    Only one decoder/encoder runs at a time, so peak memory stays near a single clip.
+    """
+    n = len(seg_inputs)
+    fade = transition / 2
+    seg_paths = []
+    for i, (seg_in, seg_filter) in enumerate(zip(seg_inputs, seg_filters)):
+        # xfade overlaps segments; without it each one is shorter by the overlap
+        dur = durations[i] - (transition if i < n - 1 else 0)
+        filt = seg_filter.replace(f"[{i}:v]", "[0:v]").replace(f"[v{i}]", "")
+        filt += (f",fps={fps},trim=duration={dur:.3f},setpts=PTS-STARTPTS"
+                 f",fade=t=in:st=0:d={fade:.2f},fade=t=out:st={max(0.0, dur - fade):.3f}:d={fade:.2f}"
+                 f",format=yuv420p[v]")
+        seg_path = os.path.join(tmpdir, f"seg_{i}.mp4")
+        cmd = [
+            "ffmpeg", "-y", *seg_in,
+            "-filter_complex", filt, "-map", "[v]", "-an",
+            "-threads", FFMPEG_THREADS, "-filter_complex_threads", FFMPEG_THREADS,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+            "-profile:v", "baseline", "-level", "3.1",
+            seg_path,
+        ]
+        subprocess.run(cmd, check=True, capture_output=True, timeout=FFMPEG_ENCODE_TIMEOUT)
+        seg_paths.append(seg_path)
+
+    list_path = os.path.join(tmpdir, "segments.txt")
+    with open(list_path, "w") as f:
+        for path in seg_paths:
+            f.write(f"file '{path}'\n")
+    joined = os.path.join(tmpdir, "joined.mp4")
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", joined],
+        check=True, capture_output=True, timeout=FFMPEG_ENCODE_TIMEOUT,
+    )
+    return joined
+
+
 def compose_multi_clip_reel(
     reel_id: int,
     title: str,
@@ -765,8 +809,10 @@ def compose_multi_clip_reel(
         # Build ffmpeg inputs — video clips or composited images
         inputs = []
         filter_parts = []
+        seg_inputs = []  # per-segment input args (low-memory path)
 
         for i, seg in enumerate(segments):
+            seg_start = len(inputs)
             seg_type = seg.get("type", "video")
             dur = durations[i]
 
@@ -797,11 +843,20 @@ def compose_multi_clip_reel(
                     f"[{i}:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase"
                     f":flags=lanczos,crop={WIDTH}:{HEIGHT},setsar=1[v{i}]"
                 )
+            seg_inputs.append(inputs[seg_start:])
 
         next_input_idx = n  # video/image inputs used indices 0..n-1
 
+        if LOW_MEMORY_VIDEO and n > 1:
+            joined = _render_segments_sequentially(
+                seg_inputs, filter_parts, durations, TRANSITION_DUR, FPS, tmpdir,
+            )
+            inputs = ["-threads", FFMPEG_THREADS, "-i", joined]
+            filter_parts = []
+            last_label = "0:v"
+            next_input_idx = 1
         # Chain xfade transitions
-        if n == 1:
+        elif n == 1:
             last_label = "v0"
         else:
             last_label = "v0"

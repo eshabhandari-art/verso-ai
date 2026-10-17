@@ -44,6 +44,7 @@ RUN python -c "import sys, tarfile, urllib.request; resp = urllib.request.urlope
 ENV LLM_PROVIDER=gemini \
     FFMPEG_THREADS=1 \
     VIDEO_WORKERS=1 \
+    LOW_MEMORY_VIDEO=1 \
     PYTHONUNBUFFERED=1
 
 # Render provides $PORT
