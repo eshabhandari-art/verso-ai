@@ -34,7 +34,7 @@ export default function OnboardingPage() {
     getPredefinedQuestions().then(setPredefinedQs).catch(() => {})
   }, [])
 
-  if (!token) return <Navigate to="/login" replace />
+  if (!token) return <Navigate to="/" replace />
   if (onboarded) return <Navigate to="/" replace />
 
   const handleContinue = () => {

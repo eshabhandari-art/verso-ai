@@ -1,6 +1,5 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import MainLayout from './layouts/MainLayout'
-import AuthLayout from './layouts/AuthLayout'
 import ProtectedRoute from './components/ProtectedRoute'
 import FeedPage from './pages/FeedPage'
 import BookmarksPage from './pages/BookmarksPage'
@@ -8,8 +7,6 @@ import UploadPage from './pages/UploadPage'
 
 import FlashcardsPage from './pages/FlashcardsPage'
 import ChatPage from './pages/ChatPage'
-import LoginPage from './pages/LoginPage'
-import SignupPage from './pages/SignupPage'
 import MyBooksPage from './pages/MyBooksPage'
 import ProfilePage from './pages/ProfilePage'
 import LandingPage from './pages/LandingPage'
@@ -34,10 +31,9 @@ function App() {
       </Route>
       <Route path="/welcome" element={<LandingPage />} />
       <Route path="/onboarding" element={<OnboardingPage />} />
-      <Route element={<AuthLayout />}>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-      </Route>
+      {/* Login is disabled — guests get a session automatically */}
+      <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/signup" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

@@ -133,7 +133,7 @@ export default function LandingPage() {
           <li><a href="#how">How It Works</a></li>
           <li><a href="#features">Features</a></li>
           <li><a href="#local">Local AI</a></li>
-          <li><Link to="/login" className="nav-cta">Login</Link></li>
+          <li><Link to="/" className="nav-cta">Open App</Link></li>
         </ul>
       </nav>
 
@@ -147,7 +147,7 @@ export default function LandingPage() {
           fully private, entirely yours.
         </p>
         <div className="hero-actions">
-          <Link to="/login" className="btn-primary"><span>Upload a Document &rarr;</span></Link>
+          <Link to="/" className="btn-primary"><span>Upload a Document &rarr;</span></Link>
           <a href="#how" className="btn-secondary">See How It Works</a>
         </div>
 

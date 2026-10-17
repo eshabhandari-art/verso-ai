@@ -52,7 +52,7 @@ export default function ProfilePage() {
 
   const handleLogout = () => {
     logout()
-    navigate('/login')
+    navigate('/welcome')
   }
 
   const handleSaveName = async () => {

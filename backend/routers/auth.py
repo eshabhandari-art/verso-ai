@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -72,6 +73,34 @@ def signup(body: AuthBody, request: Request):
     ip = request.client.host if request.client else ""
     token = create_token(user_id, name)
     refresh = create_refresh_token(user_id, name, device_info, ip, body.remember_me)
+    return {"token": token, "refresh_token": refresh, "user": {"id": user_id, "name": name}}
+
+
+# ── Guest ───────────────────────────────────────────────────
+
+@router.post("/guest")
+def guest(request: Request):
+    """Create a private guest account so the app can be used without signing up."""
+    name = f"guest_{secrets.token_hex(6)}"
+    conn = get_db()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO users (name, password_hash) VALUES (?, ?)",
+            (name, hash_password(secrets.token_urlsafe(32))),
+        )
+        user_id = cursor.lastrowid
+        conn.execute(
+            "INSERT OR IGNORE INTO user_preferences (user_id, display_name, learning_style, content_depth, use_case, flashcard_difficulty) VALUES (?, ?, 'mixed', 'balanced', 'learning', 'medium')",
+            (user_id, "Guest"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    device_info = request.headers.get("User-Agent", "")
+    ip = request.client.host if request.client else ""
+    token = create_token(user_id, name)
+    refresh = create_refresh_token(user_id, name, device_info, ip, remember_me=True)
     return {"token": token, "refresh_token": refresh, "user": {"id": user_id, "name": name}}
 
 

@@ -28,7 +28,7 @@ function clearAndRedirect() {
   localStorage.removeItem('verso_token')
   localStorage.removeItem('verso_refresh_token')
   localStorage.removeItem('verso_user')
-  window.location.href = '/login'
+  window.location.href = '/'
 }
 
 api.interceptors.response.use(
@@ -73,6 +73,11 @@ api.interceptors.response.use(
 )
 
 // --- Auth ---
+export async function guestLogin() {
+  const { data } = await axios.post(`${baseURL}/auth/guest`)
+  return data // { token, refresh_token, user: { id, name } }
+}
+
 export async function signup(name, password, rememberMe = false) {
   const { data } = await api.post('/auth/signup', { name, password, remember_me: rememberMe })
   return data // { token, refresh_token, user: { id, name } }
