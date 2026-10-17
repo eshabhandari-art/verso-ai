@@ -1,0 +1,179 @@
+import { useEffect, useRef } from 'react'
+import api, { getUploadStatus, getUploads } from '../api'
+import { getWsBaseUrl, getAuthToken } from '../api/ws'
+import useStore from '../store/useStore'
+import { mapReel } from '../utils/reelMapper'
+
+export const STAGE_LABELS = {
+  uploading: 'Uploading...',
+  parsing: 'Parsing...',
+  analyzing: 'Analyzing...',
+  extracting: 'Extracting concepts...',
+  generating: 'Generating bites...',
+  composing: 'Composing video...',
+  embedding: 'Building knowledge base...',
+  done: 'Done!',
+}
+
+export default function UploadTracker() {
+  const bgUpload = useStore((s) => s.bgUpload)
+  const setBgUpload = useStore((s) => s.setBgUpload)
+  const updateBgUpload = useStore((s) => s.updateBgUpload)
+  const clearBgUpload = useStore((s) => s.clearBgUpload)
+  const wsRef = useRef(null)
+  const pollRef = useRef(null)
+  const restoredRef = useRef(false)
+
+  // Restore bgUpload from backend on page refresh
+  useEffect(() => {
+    if (restoredRef.current || bgUpload) return
+    restoredRef.current = true
+
+    getUploads()
+      .then((list) => {
+        const processing = list.find((u) => u.status === 'processing')
+        if (processing) {
+          // Fetch detailed status (with progress/stage)
+          getUploadStatus(processing.id).then((status) => {
+            setBgUpload({
+              id: processing.id,
+              filename: processing.filename,
+              progress: status.progress ?? 0,
+              stage: status.stage || 'processing',
+              status: status.status,
+            })
+          }).catch(() => {
+            // Fallback with basic info
+            setBgUpload({
+              id: processing.id,
+              filename: processing.filename,
+              progress: 0,
+              stage: 'processing',
+              status: 'processing',
+            })
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!bgUpload || bgUpload.status === 'done') return
+
+    // If already in terminal state, auto-clear
+    if (bgUpload.status === 'error' || bgUpload.status === 'partial') {
+      setTimeout(() => clearBgUpload(), 4000)
+      return
+    }
+
+    const uploadId = bgUpload.id
+
+    const handleUpdate = (progress, stage, status) => {
+      updateBgUpload({ progress, stage, status })
+      if (status === 'done') {
+        cleanup()
+        // Auto-clear after a short delay so user sees "Done!"
+        setTimeout(() => clearBgUpload(), 2000)
+      } else if (status === 'error') {
+        cleanup()
+        setTimeout(() => clearBgUpload(), 4000)
+      }
+    }
+
+    const cleanup = () => {
+      if (wsRef.current) { try { wsRef.current.close() } catch {} wsRef.current = null }
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+    }
+
+    // Immediately check current status — catches cases where pipeline died between polls
+    getUploadStatus(uploadId)
+      .then((s) => {
+        if (s.status === 'error' || s.status === 'done') {
+          handleUpdate(s.progress ?? 0, s.stage || 'uploading', s.status)
+        }
+      })
+      .catch(() => {})
+
+    // Try WebSocket first
+    const token = getAuthToken()
+    if (token && !wsRef.current && !pollRef.current) {
+      try {
+        const ws = new WebSocket(`${getWsBaseUrl()}/ws/upload/${uploadId}?token=${token}`)
+        wsRef.current = ws
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data)
+            if (msg.type === 'progress') {
+              handleUpdate(msg.progress ?? 0, msg.stage || 'uploading', msg.status)
+            } else if (msg.type === 'reel_ready' && msg.reel) {
+              const mapped = mapReel(msg.reel)
+              useStore.getState().appendReels([mapped])
+            } else if (msg.type === 'video_ready' && msg.reel_id) {
+              const baseURL = api.defaults.baseURL || ''
+              useStore.getState().updateReelVideo(msg.reel_id, `${baseURL}/video/${msg.reel_id}`)
+            }
+          } catch {}
+        }
+
+        ws.onerror = () => {
+          ws.close()
+          wsRef.current = null
+          startPolling(uploadId, handleUpdate)
+        }
+
+        ws.onclose = () => { wsRef.current = null }
+      } catch {
+        startPolling(uploadId, handleUpdate)
+      }
+    } else if (!wsRef.current && !pollRef.current) {
+      startPolling(uploadId, handleUpdate)
+    }
+
+    return cleanup
+  }, [bgUpload?.id, bgUpload?.status])
+
+  const startPolling = (uploadId, handleUpdate) => {
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await getUploadStatus(uploadId)
+        handleUpdate(s.progress ?? 0, s.stage || 'uploading', s.status)
+      } catch {}
+    }, 2000)
+  }
+
+  if (!bgUpload) return null
+
+  const progress = bgUpload.progress || 0
+  const label = STAGE_LABELS[bgUpload.stage] || 'Processing...'
+  const isDone = bgUpload.status === 'done'
+  const isError = bgUpload.status === 'error'
+  return (
+    <div className={`fixed top-0 left-0 right-0 z-50 md:left-16 ${isDone ? 'bg-green-500/90' : isError ? 'bg-danger/90' : 'bg-primary/90'} text-white px-4 py-2 flex items-center gap-3 text-sm backdrop-blur-sm`}>
+      <div className="flex-1 min-w-0">
+        <span className="font-medium truncate block">{bgUpload.filename}</span>
+        <span className="text-white/80 text-xs">{isError ? 'Processing failed' : label}</span>
+      </div>
+      {!isDone && !isError && (
+        <div className="flex items-center gap-2">
+          <div className="w-24 h-1.5 rounded-full bg-white/20 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-white transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className="text-xs font-semibold tabular-nums">{Math.round(progress)}%</span>
+        </div>
+      )}
+      {isDone && <span className="text-xs font-semibold">Bites ready!</span>}
+      {(isDone || isError) && (
+        <button
+          onClick={clearBgUpload}
+          className="text-white/70 hover:text-white text-lg leading-none cursor-pointer"
+        >
+          &times;
+        </button>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,51 @@
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+.claude/settings.local.json
+*.swp
+*.swo
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# Data
+*.db
+audio_cache/
+data/temp/
+
+# TTS models (large binaries, downloaded at build time)
+backend/tts/models/*.onnx
+backend/tts/models/*.onnx.json
+
+# Test artifacts
+tests/
+playwright.config.js
+test-results/
+
+# Logs
+*.log
+
+# Fine-tuned model (too large for git)
+scripts/verso-qwen2.5-3b_gguf/
+*.gguf
+
+# Generated eval/training data
+scripts/training_data_raw.jsonl
+backend/eval_results.json

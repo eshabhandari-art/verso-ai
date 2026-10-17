@@ -1,0 +1,229 @@
+import sqlite3
+import os
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "data", "verso.db")
+
+
+def get_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def init_db():
+    conn = get_db()
+
+    # Migration: if old user_preferences schema is missing display_name, drop and recreate
+    try:
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(user_preferences)").fetchall()]
+        if cols and "display_name" not in cols:
+            conn.execute("DROP TABLE user_preferences")
+            conn.commit()
+    except Exception:
+        pass
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id),
+            display_name TEXT NOT NULL DEFAULT '',
+            learning_style TEXT DEFAULT 'reading' CHECK(learning_style IN ('visual','auditory','reading','mixed')),
+            content_depth TEXT DEFAULT 'balanced' CHECK(content_depth IN ('brief','balanced','detailed')),
+            use_case TEXT DEFAULT 'learning' CHECK(use_case IN ('exam','work','learning','research')),
+            flashcard_difficulty TEXT DEFAULT 'medium' CHECK(flashcard_difficulty IN ('easy','medium','hard')),
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS uploads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            filename TEXT NOT NULL,
+            status TEXT DEFAULT 'processing',
+            doc_type TEXT,
+            total_pages INTEGER DEFAULT 0,
+            progress INTEGER DEFAULT 0,
+            stage TEXT DEFAULT 'uploading',
+            qa_ready INTEGER DEFAULT 0,
+            error_message TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS reels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER REFERENCES uploads(id),
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            narration TEXT,
+            category TEXT,
+            keywords TEXT,
+            page_ref INTEGER,
+            audio_path TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS flashcards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER REFERENCES uploads(id),
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS bookmarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            reel_id INTEGER REFERENCES reels(id),
+            flashcard_id INTEGER REFERENCES flashcards(id),
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS progress (
+            user_id INTEGER REFERENCES users(id),
+            upload_id INTEGER REFERENCES uploads(id),
+            viewed_reel_ids TEXT DEFAULT '[]',
+            last_viewed_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, upload_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER REFERENCES uploads(id),
+            user_message TEXT NOT NULL,
+            ai_response TEXT NOT NULL,
+            sources TEXT DEFAULT '[]',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS chat_summaries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER REFERENCES uploads(id),
+            summary TEXT NOT NULL,
+            session_number INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+    """)
+
+    # Migration: add progress/stage/error_message columns to uploads if missing
+    upload_cols = [row[1] for row in conn.execute("PRAGMA table_info(uploads)").fetchall()]
+    if "progress" not in upload_cols:
+        conn.execute("ALTER TABLE uploads ADD COLUMN progress INTEGER DEFAULT 0")
+    if "stage" not in upload_cols:
+        conn.execute("ALTER TABLE uploads ADD COLUMN stage TEXT DEFAULT 'uploading'")
+    if "error_message" not in upload_cols:
+        conn.execute("ALTER TABLE uploads ADD COLUMN error_message TEXT")
+
+    # Migration: add narration column to reels if missing
+    reel_cols = [row[1] for row in conn.execute("PRAGMA table_info(reels)").fetchall()]
+    if "narration" not in reel_cols:
+        conn.execute("ALTER TABLE reels ADD COLUMN narration TEXT")
+
+    # Migration: add subject_category to uploads
+    if "subject_category" not in upload_cols:
+        conn.execute("ALTER TABLE uploads ADD COLUMN subject_category TEXT DEFAULT 'general'")
+
+    # Migration: add bg_image to reels
+    if "bg_image" not in reel_cols:
+        conn.execute("ALTER TABLE reels ADD COLUMN bg_image TEXT")
+
+    # Migration: add video_path to reels
+    if "video_path" not in reel_cols:
+        conn.execute("ALTER TABLE reels ADD COLUMN video_path TEXT")
+
+    # Migration: add source_text to reels (for self-learning pipeline)
+    if "source_text" not in reel_cols:
+        conn.execute("ALTER TABLE reels ADD COLUMN source_text TEXT")
+
+    # Migration: add one_liner to reels (short LLM-generated description)
+    if "one_liner" not in reel_cols:
+        conn.execute("ALTER TABLE reels ADD COLUMN one_liner TEXT")
+
+    # Migration: add segments_json to reels (for multi-clip composition hints)
+    if "segments_json" not in reel_cols:
+        conn.execute("ALTER TABLE reels ADD COLUMN segments_json TEXT")
+
+    # Migration: add doc_summary to uploads (document-level summary)
+    if "doc_summary" not in upload_cols:
+        conn.execute("ALTER TABLE uploads ADD COLUMN doc_summary TEXT")
+
+    # Migration: add chat_summary to uploads (stores summary after 10 exchanges)
+    if "chat_summary" not in upload_cols:
+        conn.execute("ALTER TABLE uploads ADD COLUMN chat_summary TEXT")
+
+    # Migration: reel_interactions + reel_likes tables for feed algorithm
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS reel_interactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            reel_id INTEGER NOT NULL REFERENCES reels(id),
+            action TEXT NOT NULL CHECK(action IN ('view','like','unlike','skip','bookmark','unbookmark')),
+            time_spent_ms INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ri_user ON reel_interactions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_ri_user_action ON reel_interactions(user_id, action);
+
+        CREATE TABLE IF NOT EXISTS reel_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            reel_id INTEGER NOT NULL REFERENCES reels(id),
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, reel_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token_hash TEXT NOT NULL UNIQUE,
+            device_info TEXT,
+            ip_address TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            expires_at TEXT NOT NULL,
+            revoked INTEGER DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_rt_user ON refresh_tokens(user_id);
+        CREATE INDEX IF NOT EXISTS idx_rt_hash ON refresh_tokens(token_hash);
+
+        CREATE TABLE IF NOT EXISTS security_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            question TEXT NOT NULL,
+            answer_hash TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_sq_user ON security_questions(user_id);
+    """)
+
+    # Migration: add lockout columns to users
+    user_cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "failed_login_attempts" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0")
+    if "locked_until" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN locked_until TEXT")
+
+    # Migration: add filepath to uploads (for pipeline resume after restart)
+    if "filepath" not in upload_cols:
+        conn.execute("ALTER TABLE uploads ADD COLUMN filepath TEXT")
+
+    # Backfill: fix gold standard reels to appear in Explore tab
+    conn.execute("UPDATE uploads SET doc_type = 'seed' WHERE filename = '__gold_standard__' AND (doc_type IS NULL OR doc_type != 'seed')")
+
+    # Seed a default user (placeholder until auth is implemented)
+    conn.execute(
+        "INSERT OR IGNORE INTO users (id, name, password_hash) VALUES (1, 'default', 'placeholder')"
+    )
+
+    # Backfill: assign orphan uploads to the default seed user
+    conn.execute("UPDATE uploads SET user_id = 1 WHERE user_id IS NULL")
+
+    conn.commit()
+    conn.close()
