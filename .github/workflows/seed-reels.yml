@@ -1,0 +1,50 @@
+name: Render seed reels
+
+# Renders the curated gold-standard reels (TTS + video) and publishes them as the
+# "seed-reels" release asset, which the Docker build downloads.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install system packages
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng fonts-dejavu-core
+
+      - name: Install Python packages
+        run: pip install -r backend/requirements.txt
+
+      - name: Render gold reels
+        working-directory: backend
+        run: |
+          python scripts/generate_gold_reels.py --json data/gold_standard_reels_3.json
+          python scripts/generate_gold_reels.py --json data/gold_standard_reels_4.json
+
+      - name: Export seed bundle
+        working-directory: backend
+        run: |
+          python scripts/export_seed_reels.py --out seed_reels
+          tar czf ../seed-reels.tar.gz seed_reels
+          du -sh ../seed-reels.tar.gz
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view seed-reels >/dev/null 2>&1 || \
+            gh release create seed-reels --title "Seed reels" --notes "Pre-rendered Explore feed reels used by the Docker build."
+          gh release upload seed-reels seed-reels.tar.gz --clobber

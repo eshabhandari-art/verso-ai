@@ -3,8 +3,11 @@
 **/venv
 **/__pycache__
 frontend/dist
-backend/data
+backend/data/*.db
+backend/data/embeddings
+backend/data/audio_cache
+backend/data/video_cache
+backend/seed_reels
 backend/.env
 backend/tts/models
 docs
-deploy

@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from config import EMBEDDINGS_DIR, AUDIO_CACHE_DIR, VIDEO_CACHE_DIR
 from database import init_db
+from seed import seed_gold_reels
 
 from routers.audio import router as audio_router
 from routers.upload import router as upload_router
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI):
     AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     VIDEO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
+    seed_gold_reels()
     # Store the running event loop so background threads can schedule async broadcasts
     pipeline._event_loop = asyncio.get_running_loop()
     # Resume any uploads that were interrupted by a server restart/reload

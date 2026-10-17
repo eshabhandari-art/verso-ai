@@ -49,3 +49,4 @@ scripts/verso-qwen2.5-3b_gguf/
 # Generated eval/training data
 scripts/training_data_raw.jsonl
 backend/eval_results.json
+backend/seed_reels/
