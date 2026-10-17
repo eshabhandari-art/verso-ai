@@ -32,10 +32,9 @@ RUN mkdir -p data/embeddings data/audio_cache data/video_cache
 # Skipped if the release asset doesn't exist yet.
 ARG SEED_REELS_URL=https://github.com/eshabhandari-art/verso-ai/releases/download/seed-reels/seed-reels.tar.gz
 RUN python -c "\
-import io, sys, tarfile, urllib.request; \
-url = sys.argv[1]; \
-data = urllib.request.urlopen(url, timeout=300).read(); \
-tarfile.open(fileobj=io.BytesIO(data)).extractall('.'); \
+import sys, tarfile, urllib.request; \
+resp = urllib.request.urlopen(sys.argv[1], timeout=300); \
+tarfile.open(fileobj=resp, mode='r|gz').extractall('.'); \
 print('Seed reels downloaded')" "${SEED_REELS_URL}" || echo "No seed reels found, skipping"
 
 ENV LLM_PROVIDER=gemini \
